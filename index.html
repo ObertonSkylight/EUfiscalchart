@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EU Government Finances 1999–2026</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0f1117; color: #e8e8e8;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; min-height: 100vh; padding: 24px 16px;
+  }
+  h1 { font-size:15px; font-weight:400; letter-spacing:.08em; text-transform:uppercase; color:#888; margin-bottom:2px; text-align:center; }
+  h2 { font-size:11px; font-weight:400; color:#555; text-align:center; margin-bottom:4px; }
+  .year-display { font-weight:700; color:#f0f0f0; line-height:1; margin:4px 0 2px; letter-spacing:-2px; }
+  .sub-row { display:flex; gap:20px; align-items:center; justify-content:center; min-height:20px; margin-bottom:10px; }
+  .est-note { font-size:12px; color:#666; }
+  .cpi-badge { font-size:12px; color:#aaa; background:#1c1f2a; border-radius:4px; padding:2px 8px; }
+  canvas { display:block; max-width:100%; }
+  .legend { display:flex; flex-wrap:wrap; justify-content:center; gap:0; max-width:740px; margin-top:14px; }
+  .li { display:flex; align-items:center; gap:5px; font-size:11px; color:#888; margin:3px 8px; }
+  .ld { width:11px; height:11px; border-radius:2px; flex-shrink:0; }
+  .controls { display:flex; flex-wrap:wrap; gap:14px; align-items:center; justify-content:center; margin-top:18px; }
+  button { background:#1e2130; color:#ccc; border:1px solid #333; border-radius:6px; padding:7px 22px; font-size:13px; cursor:pointer; transition:background .15s; }
+  button:hover { background:#252840; }
+  .ctrl-group { display:flex; align-items:center; gap:8px; font-size:12px; color:#666; }
+  input[type=range] { accent-color:#4466DD; cursor:pointer; }
+  .source-note { font-size:10px; color:#444; text-align:center; margin-top:18px; max-width:720px; line-height:1.6; }
+</style>
+</head>
+<body>
+
+<h1>European Union Government Finances</h1>
+<h2>EU-27 excluding United Kingdom — all years</h2>
+<div class="year-display" id="yearDisplay">1999</div>
+<div class="sub-row">
+  <div class="est-note" id="estNote"></div>
+  <div class="cpi-badge" id="cpiBadge">HICP 100.0</div>
+</div>
+
+<canvas id="c" width="740" height="480"></canvas>
+<div class="legend" id="legendRow"></div>
+
+<div class="controls">
+  <button id="btnPlay">&#9646;&#9646; Pause</button>
+  <div class="ctrl-group">
+    <label>Year</label>
+    <input type="range" min="0" max="27" step="1" value="0" id="slYear" style="width:220px">
+  </div>
+  <div class="ctrl-group">
+    <label>Speed</label>
+    <input type="range" min="0.2" max="3" step="0.1" value="1" id="slSpeed" style="width:80px">
+  </div>
+</div>
+
+<p class="source-note">
+  Sources: Eurostat gov_10a_main, gov_10a_taxag, gov_10a_exp; EC Annual Report on Taxation;
+  Eurostat HICP (rebased 1999=100); EC AMECO / IMF WEO for 2025–26 projections.
+  All figures in € billions, EU-27 excluding United Kingdom, calendar year.
+  Corporate income tax separated per Eurostat gov_10a_taxag (~3–4% of GDP throughout).
+  National debt = Maastricht gross general government debt (ESA 2010, EDP definition), consistent with US and UK charts.
+  &nbsp;* = EC/IMF estimate or projection.
+</p>
+
+<script>
+const YEARS=[1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026];
+const EST=2025;
+const N=YEARS.length;
+
+// EU HICP rebased 1999=100
+const HICP=[100.0,102.4,104.8,106.9,109.1,111.7,114.3,116.8,119.5,123.5,123.0,125.3,128.7,131.6,132.9,133.9,133.8,134.8,136.8,139.4,141.6,142.1,145.9,154.5,160.8,164.5,168.2,171.8];
+const HICP_BASE=HICP[0];
+
+// ── INCOME (€B, EU27 excl UK) ─────────────────────────────────────────────
+// Corporate income tax — separated out per request
+// Source: Eurostat gov_10a_taxag, EC Taxation Trends (D.51B current taxes on income of corporations)
+// EU27 CIT runs ~3–4% of GDP. Key anchors: 1999 ~€270B, 2007 peak ~€360B,
+// 2009 GFC trough ~€240B, 2019 €370B, 2022 high €530B (energy windfall profits), 2024 €510B
+const incCorpTax=[270,310,280,255,245,255,275,315,360,335,240,255,280,285,285,305,330,355,385,415,370,330,430,530,470,510,540,570];
+
+// Personal income tax + CGT + wealth taxes (total "income & wealth" minus CIT above)
+// Total income/wealth taxes ~13% of GDP; CIT ~3%; personal ~10%
+const incPersonalTax=[600,640,700,715,720,735,765,795,850,925,900,925,970,995,1015,1055,1100,1145,1205,1265,1370,1290,1460,1640,1760,1800,1860,1920];
+
+// Social contributions (~14% of GDP — largest single revenue item in EU)
+const incSocContrib=[1150,1190,1230,1270,1300,1340,1390,1440,1500,1560,1560,1590,1640,1680,1700,1740,1800,1860,1930,2010,2090,2110,2200,2370,2490,2590,2700,2810];
+
+// Taxes on production & imports: VAT, excise duties, customs (~13% of GDP)
+const incProdTax=[850,890,920,940,960,990,1030,1090,1140,1160,1080,1130,1180,1210,1220,1260,1310,1360,1410,1470,1500,1420,1530,1710,1760,1820,1890,1960];
+
+// Other revenue (property income, sales, capital transfers)
+const incOther=[310,330,340,350,360,370,390,410,440,450,420,440,460,470,480,500,520,540,560,590,600,580,620,680,710,740,760,780];
+
+// ── EXPENDITURE (€B, EU27 excl UK) ───────────────────────────────────────
+const expSocProt  =[1280,1310,1360,1420,1470,1510,1570,1620,1680,1770,1920,1960,1990,2040,2080,2110,2170,2240,2300,2380,2470,2820,2820,2810,2940,3060,3190,3310];
+const expHealth   =[540,560,590,620,650,680,710,740,780,820,850,880,900,920,930,960,1000,1050,1100,1150,1200,1350,1380,1430,1490,1550,1620,1690];
+const expGenPub   =[320,330,340,350,360,370,380,390,410,440,440,450,460,470,470,480,490,500,510,520,530,540,560,590,610,630,650,670];
+const expEcon     =[280,290,300,310,320,340,360,380,400,430,430,440,450,460,460,480,500,520,540,560,580,640,660,700,730,760,790,820];
+const expDefence  =[200,205,210,215,215,215,218,222,228,238,232,228,224,218,213,211,215,220,228,240,258,268,288,330,380,420,460,500];
+const expEducation=[400,415,430,445,455,470,490,510,530,555,565,575,580,580,576,578,590,605,620,640,660,670,690,720,750,780,810,840];
+const expOther    =[370,385,400,415,430,450,470,490,520,550,570,590,600,600,595,605,620,640,665,690,710,790,780,810,840,880,920,960];
+
+// ── SECONDARY AXIS ────────────────────────────────────────────────────────
+const GDP    =[8450,8980,9290,9520,9640,10050,10510,11120,11750,12020,11490,11930,12380,12350,12370,12890,13240,13620,14090,14720,15230,14820,15750,16800,17180,17800,18400,19100];
+// Maastricht gross general government debt (€B) — Eurostat EDP notifications
+// EU27 excl UK. % of GDP anchors: 70% in 1999, 62.4% low in 2007,
+// 91.5% peak in 2020, 80.7% in 2024, 81.7% in 2025 (Eurostat April 2026)
+const grossDebt=[5915,6062,6131,6283,6459,6734,7094,7117,7332,7813,8847,9783,10399,10745,10886,11343,11386,11441,11554,11776,11803,13560,14018,14280,14088,14365,15033,15662];
+
+const INCOME_STACKS=[
+  {label:'Personal income & wealth taxes', col:'#1B6DB5', data:incPersonalTax},
+  {label:'Corporate income tax',           col:'#F4A620', data:incCorpTax},
+  {label:'Social contributions',           col:'#2E9E7A', data:incSocContrib},
+  {label:'Production & import taxes (VAT etc.)', col:'#BA7517', data:incProdTax},
+  {label:'Other revenue',                  col:'#5BA0C8', data:incOther},
+];
+const EXP_STACKS=[
+  {label:'Social protection',       col:'#C0392B', data:expSocProt},
+  {label:'Health',                  col:'#E74C3C', data:expHealth},
+  {label:'General public services', col:'#F39C12', data:expGenPub},
+  {label:'Economic affairs',        col:'#7B241C', data:expEcon},
+  {label:'Defence',                 col:'#D98880', data:expDefence},
+  {label:'Education',               col:'#9B59B6', data:expEducation},
+  {label:'Other spending',          col:'#F1948A', data:expOther},
+];
+const DEBT_COL='#4466DD', GDP_COL='#16A085';
+
+const legendEl=document.getElementById('legendRow');
+[...INCOME_STACKS,...EXP_STACKS].forEach(s=>{
+  legendEl.innerHTML+=`<span class="li"><span class="ld" style="background:${s.col}"></span>${s.label}</span>`;
+});
+legendEl.innerHTML+=`<span class="li"><span class="ld" style="background:${DEBT_COL}"></span>National Debt (right axis)</span>`;
+legendEl.innerHTML+=`<span class="li"><span class="ld" style="background:${GDP_COL}"></span>GDP (right axis)</span>`;
+
+const cv=document.getElementById('c');
+const ctx=cv.getContext('2d');
+const W=740,H=480,PAD_L=76,PAD_R=88,PAD_T=20,PAD_B=38;
+const CH=H-PAD_T-PAD_B,CW=W-PAD_L-PAD_R;
+const BAR_W=100,GAP=18,TOTAL=BAR_W*4+GAP*3;
+const X1=PAD_L+(CW-TOTAL)/2,X2=X1+BAR_W+GAP,X3=X2+BAR_W+GAP,X4=X3+BAR_W+GAP;
+
+let currentMaxLeft=4000,currentMaxRight=16000;
+let playing=true,speed=1,lastTs=null,currentIdx=0;
+
+function lerp(a,b,f){return a+(b-a)*f;}
+function ease(f){return f<0.5?2*f*f:1-Math.pow(-2*f+2,2)/2;}
+function fmtB(v){return v>=1000?'€'+(v/1000).toFixed(1)+'T':'€'+Math.round(v)+'B';}
+function getVal(arr,idx){
+  const i0=Math.floor(idx)%N,i1=Math.min(N-1,i0+1);
+  return lerp(arr[i0],arr[i1],ease(idx-Math.floor(idx)));
+}
+function niceCeil(v){
+  if(v<=0)return 1000;
+  const steps=[1,1.2,1.5,1.8,2,2.5,3,3.5,4,4.5,5,6,7,8,9,10];
+  const mag=Math.pow(10,Math.floor(Math.log10(v)));
+  for(const s of steps){const c=s*mag;if(c>=v)return c;}
+  return 10*mag;
+}
+
+function drawAxes(maxLeft,maxRight){
+  const ticks=6;
+  ctx.font='11px -apple-system,sans-serif';
+  ctx.textAlign='right';ctx.textBaseline='middle';
+  for(let i=0;i<=ticks;i++){
+    const y=PAD_T+CH-(i/ticks)*CH;
+    ctx.beginPath();ctx.moveTo(PAD_L,y);ctx.lineTo(W-PAD_R,y);
+    ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.lineWidth=1;ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,0.45)';
+    ctx.fillText(fmtB(maxLeft*i/ticks),PAD_L-5,y);
+  }
+  ctx.textAlign='left';
+  for(let i=0;i<=ticks;i++){
+    const y=PAD_T+CH-(i/ticks)*CH;
+    ctx.fillStyle='rgba(100,130,220,0.7)';
+    ctx.fillText(fmtB(maxRight*i/ticks),W-PAD_R+5,y);
+  }
+  ctx.save();ctx.translate(W-4,PAD_T+CH/2);ctx.rotate(-Math.PI/2);
+  ctx.textAlign='center';ctx.font='10px sans-serif';
+  ctx.fillStyle='rgba(100,130,220,0.55)';ctx.fillText('Nat. Debt / GDP',0,0);ctx.restore();
+  ctx.beginPath();ctx.moveTo(PAD_L,PAD_T+CH);ctx.lineTo(W-PAD_R,PAD_T+CH);
+  ctx.strokeStyle='rgba(255,255,255,0.12)';ctx.lineWidth=1;ctx.stroke();
+  const lblY=PAD_T+CH+10;
+  ctx.font='11px sans-serif';ctx.textBaseline='top';ctx.textAlign='center';
+  ctx.fillStyle='rgba(255,255,255,0.5)';
+  ctx.fillText('Total Income',X1+BAR_W/2,lblY);
+  ctx.fillText('Total Expenditure',X2+BAR_W/2,lblY);
+  ctx.fillStyle=DEBT_COL+'bb';ctx.fillText('National Debt',X3+BAR_W/2,lblY);
+  ctx.fillStyle=GDP_COL+'bb';ctx.fillText('GDP',X4+BAR_W/2,lblY);
+}
+
+function drawStackedBar(x,w,stacks,idx,maxLeft){
+  let y=PAD_T+CH;
+  const vals=stacks.map(s=>getVal(s.data,idx));
+  const total=vals.reduce((a,b)=>a+b,0);
+  stacks.forEach((s,i)=>{
+    const v=vals[i],barH=(v/maxLeft)*CH,barY=y-barH;
+    ctx.fillStyle=s.col;
+    ctx.beginPath();
+    if(i===stacks.length-1)ctx.roundRect(x,barY,w,barH,[4,4,0,0]);
+    else ctx.rect(x,barY,w,barH);
+    ctx.fill();
+    if(i<stacks.length-1){
+      ctx.beginPath();ctx.moveTo(x,barY);ctx.lineTo(x+w,barY);
+      ctx.strokeStyle='rgba(0,0,0,0.25)';ctx.lineWidth=0.5;ctx.stroke();
+    }
+    if(barH>17){
+      ctx.font=`bold ${Math.min(11,Math.floor(barH*0.44))}px sans-serif`;
+      ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillStyle='rgba(255,255,255,0.85)';
+      ctx.fillText(fmtB(v),x+w/2,barY+barH/2);
+    }
+    y=barY;
+  });
+  const topY=PAD_T+CH-(total/maxLeft)*CH;
+  ctx.font='bold 12px sans-serif';ctx.textAlign='center';ctx.textBaseline='bottom';
+  ctx.fillStyle='rgba(255,255,255,0.88)';ctx.fillText(fmtB(total),x+w/2,topY-5);
+  return total;
+}
+
+function drawSimpleBar(x,w,val,maxRight,col){
+  const barH=(val/maxRight)*CH,barY=PAD_T+CH-barH;
+  const grad=ctx.createLinearGradient(x,barY,x,PAD_T+CH);
+  grad.addColorStop(0,col+'ee');grad.addColorStop(1,col+'33');
+  ctx.fillStyle=grad;
+  ctx.beginPath();ctx.roundRect(x,barY,w,barH,[4,4,0,0]);ctx.fill();
+  ctx.strokeStyle=col+'cc';ctx.lineWidth=1.5;ctx.stroke();
+  if(barH>28){
+    ctx.font='bold 12px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillStyle='rgba(255,255,255,0.9)';ctx.fillText(fmtB(val),x+w/2,barY+barH/2);
+  }
+  ctx.font='bold 12px sans-serif';ctx.textAlign='center';ctx.textBaseline='bottom';
+  ctx.fillStyle=col;ctx.fillText(fmtB(val),x+w/2,barY-5);
+}
+
+function draw(idx,dt){
+  ctx.clearRect(0,0,W,H);
+  const i0=Math.floor(idx)%N;
+  const frac=idx-Math.floor(idx);
+  const sf=ease(frac);
+  const year=Math.round(lerp(YEARS[i0],YEARS[Math.min(N-1,i0+1)],sf));
+  const isEst=year>=EST;
+  const hicpNow=lerp(HICP[i0],HICP[Math.min(N-1,i0+1)],sf);
+  const hicpFactor=hicpNow/HICP_BASE;
+
+  const incVals=INCOME_STACKS.map(s=>getVal(s.data,idx));
+  const expVals=EXP_STACKS.map(s=>getVal(s.data,idx));
+  const totalInc=incVals.reduce((a,b)=>a+b,0);
+  const totalExp=expVals.reduce((a,b)=>a+b,0);
+  const debtVal=getVal(grossDebt,idx);
+  const gdpVal=getVal(GDP,idx);
+
+  const targetLeft=niceCeil(Math.max(totalInc,totalExp)*1.12);
+  const easeAxis=Math.min(1,(dt||0.016)*2.5);
+  currentMaxLeft=Math.max(currentMaxLeft,lerp(currentMaxLeft,targetLeft,easeAxis));
+  currentMaxRight=currentMaxLeft*4;
+
+  drawAxes(currentMaxLeft,currentMaxRight);
+  const inc=drawStackedBar(X1,BAR_W,INCOME_STACKS,idx,currentMaxLeft);
+  const exp=drawStackedBar(X2,BAR_W,EXP_STACKS,idx,currentMaxLeft);
+  drawSimpleBar(X3,BAR_W,debtVal,currentMaxRight,DEBT_COL);
+  drawSimpleBar(X4,BAR_W,gdpVal,currentMaxRight,GDP_COL);
+
+  const incY=PAD_T+CH-(inc/currentMaxLeft)*CH;
+  const expY=PAD_T+CH-(exp/currentMaxLeft)*CH;
+  const gapX=X1+BAR_W+GAP/2;
+  const gap=inc-exp;
+  const gapCol=gap>=0?'#2ECC71':'#E74C3C';
+  ctx.beginPath();ctx.moveTo(gapX,Math.min(incY,expY));ctx.lineTo(gapX,Math.max(incY,expY));
+  ctx.strokeStyle=gapCol;ctx.lineWidth=2;ctx.setLineDash([4,3]);ctx.stroke();ctx.setLineDash([]);
+  if(Math.abs(incY-expY)>22){
+    ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillStyle=gapCol;
+    ctx.fillText((gap>=0?'+':'')+fmtB(Math.abs(gap)),gapX,(incY+expY)/2);
+  }
+
+  const debtY=PAD_T+CH-(debtVal/currentMaxRight)*CH;
+  const gdpY2=PAD_T+CH-(gdpVal/currentMaxRight)*CH;
+  const cmpX=X3+BAR_W+GAP/2;
+  const pct=Math.round(debtVal/gdpVal*100);
+  ctx.beginPath();ctx.moveTo(cmpX,debtY);ctx.lineTo(cmpX,gdpY2);
+  ctx.strokeStyle='rgba(180,180,180,0.35)';ctx.lineWidth=1.5;
+  ctx.setLineDash([3,3]);ctx.stroke();ctx.setLineDash([]);
+  if(Math.abs(debtY-gdpY2)>20){
+    ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillStyle='rgba(190,190,190,0.7)';
+    ctx.fillText(pct+'% of GDP',cmpX,(debtY+gdpY2)/2);
+  }
+
+  const yearFontSize=Math.round(96*hicpFactor);
+  document.getElementById('yearDisplay').style.fontSize=yearFontSize+'px';
+  document.getElementById('yearDisplay').textContent=year+(isEst?'*':'');
+  document.getElementById('estNote').textContent=isEst?'* EC/IMF estimate or projection':'';
+  document.getElementById('cpiBadge').textContent=`HICP ${Math.round(hicpNow)}  ×${hicpFactor.toFixed(2)}`;
+  document.getElementById('slYear').value=Math.round(idx);
+}
+
+function loop(ts){
+  if(lastTs===null)lastTs=ts;
+  const dt=(ts-lastTs)/1000;lastTs=ts;
+  if(playing){
+    currentIdx+=dt*speed;
+    if(currentIdx>=N-1){
+      currentIdx=N-1;playing=false;
+      document.getElementById('btnPlay').innerHTML='&#9654; Play';
+    }
+  }
+  draw(currentIdx,dt);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+document.getElementById('btnPlay').addEventListener('click',function(){
+  if(currentIdx>=N-1){currentIdx=0;currentMaxLeft=4000;currentMaxRight=16000;}
+  playing=!playing;
+  this.innerHTML=playing?'&#9646;&#9646; Pause':'&#9654; Play';
+  if(playing)lastTs=null;
+});
+document.getElementById('slYear').addEventListener('input',e=>{
+  currentIdx=parseInt(e.target.value);lastTs=null;if(!playing)draw(currentIdx,0.1);
+});
+document.getElementById('slSpeed').addEventListener('input',e=>{speed=parseFloat(e.target.value);});
+</script>
+</body>
+</html>
